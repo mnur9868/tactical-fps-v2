@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tactical Strike: a three.js FPS</title>
+<style>
+  :root {
+    --canvas: #0d1117;
+    --surface: #161b22;
+    --hairline: #30363d;
+    --ink: #e6edf3;
+    --muted: #8b949e;
+    --accent: #f78166;
+    --ct-color: #58a6ff;
+    --t-color: #f78166;
+    --radius-panel: 6px;
+    --radius-control: 8px;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-ui);
+  }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: 11px; top: 0; width: 2px; height: 8px; }
+  #crosshair i:nth-child(2) { left: 11px; bottom: 0; width: 2px; height: 8px; }
+  #crosshair i:nth-child(3) { top: 11px; left: 0; height: 2px; width: 8px; }
+  #crosshair i:nth-child(4) { top: 11px; right: 0; height: 2px; width: 8px; }
+  #crosshair.gap i { top: 11px; left: 11px; width: 2px; height: 2px; background: var(--accent); }
+  #crosshair.gap i:nth-child(1) { left: 0; top: 11px; width: 10px; height: 2px; }
+  #crosshair.gap i:nth-child(2) { left: 14px; top: 11px; width: 10px; height: 2px; }
+  #crosshair.gap i:nth-child(3) { left: 11px; top: 0; width: 2px; height: 10px; }
+  #crosshair.gap i:nth-child(4) { left: 11px; top: 14px; width: 2px; height: 10px; }
+
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 28px; height: 28px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 60ms linear, transform 60ms linear; }
+  #hitmarker.on { opacity: 1; transform: translate(-50%, -50%) rotate(45deg) scale(1.3); }
+  #hitmarker.kill { background: radial-gradient(circle, var(--accent) 0%, transparent 70%); }
+  #hitmarker i { position: absolute; background: var(--accent); }
+  #hitmarker i:nth-child(1) { left: 13px; top: 0; width: 2px; height: 9px; }
+  #hitmarker i:nth-child(2) { left: 13px; bottom: 0; width: 2px; height: 9px; }
+  #hitmarker i:nth-child(3) { top: 13px; left: 0; height: 2px; width: 9px; }
+  #hitmarker i:nth-child(4) { top: 13px; right: 0; height: 2px; width: 9px; }
+
+  #ammo {
+    position: fixed; right: 32px; bottom: 24px; display: flex; align-items: baseline; gap: 8px;
+    font-family: var(--font-readout); font-size: 48px; line-height: 1; letter-spacing: -0.03em; color: var(--ink);
+  }
+  #ammo.empty #ammo-mag { color: var(--accent); animation: pulse 0.5s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  #ammo-reserve { font-size: 16px; letter-spacing: -0.01em; color: var(--muted); }
+
+  #health {
+    position: fixed; left: 32px; bottom: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+    font-family: var(--font-readout); font-size: 14px; color: var(--muted);
+  }
+  #health-bar { width: 160px; height: 8px; background: var(--hairline); border-radius: 4px; overflow: hidden; position: relative; }
+  #health-fill { height: 100%; background: linear-gradient(90deg, #3fb950 0%, #d29922 60%, #f85149 100%); transition: width 150ms ease-out; }
+  #health-value { font-size: 28px; font-weight: 600; color: var(--ink); }
+
+  #money {
+    position: fixed; left: 32px; top: 24px; display: flex; align-items: baseline; gap: 8px;
+    font-family: var(--font-readout); font-size: 20px; color: var(--ink);
+  }
+  #money-icon { color: #3fb950; }
+  #money-value { font-weight: 600; }
+  #money-bonus { font-size: 14px; color: #3fb950; opacity: 0; transition: opacity 200ms, transform 300ms; transform: translateY(0); }
+  #money-bonus.show { opacity: 1; transform: translateY(-8px); }
+
+  #round-info {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%); text-align: center;
+    font-family: var(--font-ui); color: var(--muted);
+  }
+  #round-timer { font-family: var(--font-readout); font-size: 32px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  #round-timer.warning { color: var(--accent); animation: blink 0.8s ease-in-out infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  #round-phase { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; }
+  #round-score { font-size: 14px; color: var(--ink); margin-top: 4px; }
+  #round-score .ct { color: var(--ct-color); }
+  #round-score .t { color: var(--t-color); }
+
+  #bomb-status {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+    font-family: var(--font-readout); font-size: 18px; color: var(--ink);
+  }
+  #bomb-status[hidden] { display: none; }
+  #bomb-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); animation: bombPulse 1s ease-in-out infinite; }
+  @keyframes bombPulse { 0%, 100% { box-shadow: 0 0 8px var(--accent); } 50% { box-shadow: 0 0 20px var(--accent); } }
+  #bomb-timer { font-weight: 600; }
+  #bomb-state { font-size: 13px; color: var(--muted); text-transform: uppercase; }
+
+  #kill-feed {
+    position: fixed; right: 32px; top: 100px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+    font-family: var(--font-readout); font-size: 13px; z-index: 10;
+  }
+  .kill-entry { display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--hairline); padding: 6px 10px; border-radius: 4px; opacity: 1; transform: translateX(0); transition: opacity 300ms, transform 300ms; white-space: nowrap; }
+  .kill-entry.fade { opacity: 0; transform: translateX(40px); }
+  .kill-entry .killer { font-weight: 600; }
+  .kill-entry .victim { color: var(--muted); }
+  .kill-entry .weapon { color: var(--muted); font-size: 11px; }
+  .kill-entry .hs { color: var(--accent); font-weight: 600; margin-left: 4px; }
+  .kill-entry.ct .killer { color: var(--ct-color); }
+  .kill-entry.t .killer { color: var(--t-color); }
+
+  #spectator {
+    position: fixed; bottom: 100px; left: 32px; background: var(--surface); border: 1px solid var(--hairline); padding: 12px 16px; border-radius: var(--radius-panel);
+    font-family: var(--font-ui); font-size: 13px; color: var(--muted);
+  }
+  #spectator[hidden] { display: none; }
+  #spectator-name { color: var(--ink); font-weight: 600; }
+
+  .overlay {
+    position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--canvas) 92%, transparent); z-index: 100;
+  }
+  .overlay[hidden] { display: none; }
+  .panel {
+    width: min(480px, 100%); max-height: 90vh; overflow-y: auto; padding: 32px; background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-panel);
+  }
+  .panel h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
+  .panel p { margin: 0 0 24px; max-width: 50ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .btn {
+    font: inherit; font-weight: 500; padding: 12px 20px; white-space: nowrap; border: 1px solid var(--accent); border-radius: var(--radius-control);
+    background: var(--accent); color: var(--canvas); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .btn:hover { background: var(--ink); border-color: var(--ink); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.secondary { background: transparent; color: var(--accent); }
+  .btn.secondary:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+
+  .keys { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  .keys li { display: flex; align-items: center; gap: 8px; }
+  .keys kbd { min-width: 22px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: var(--radius-panel); font-family: var(--font-readout); font-size: 11px; color: var(--ink); text-align: center; background: var(--canvas); }
+
+  #buy-menu { max-width: 800px; max-height: 90vh; }
+  .buy-category { margin-bottom: 24px; }
+  .buy-category h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--hairline); padding-bottom: 6px; }
+  .buy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .buy-item { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-panel); padding: 12px; cursor: pointer; transition: border-color 120ms, background 120ms, transform 80ms; display: flex; flex-direction: column; gap: 6px; }
+  .buy-item:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .buy-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .buy-item.owned { border-color: #3fb950; background: color-mix(in srgb, #3fb950 10%, var(--canvas)); }
+  .buy-item.unaffordable { opacity: 0.5; cursor: not-allowed; }
+  .buy-item-name { font-weight: 500; font-size: 14px; }
+  .buy-item-price { font-family: var(--font-readout); font-size: 16px; font-weight: 600; color: #3fb950; }
+  .buy-item-desc { font-size: 11px; color: var(--muted); line-height: 1.4; flex: 1; }
+  .buy-item-stats { display: flex; gap: 8px; font-size: 10px; color: var(--muted); font-family: var(--font-readout); }
+  .buy-item-stat { display: flex; align-items: center; gap: 3px; }
+
+  .team-select { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .team-card { background: var(--canvas); border: 2px solid var(--hairline); border-radius: var(--radius-panel); padding: 24px; cursor: pointer; transition: border-color 120ms, transform 80ms; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .team-card:hover { border-color: var(--team-color); transform: translateY(-4px); }
+  .team-card.ct { --team-color: var(--ct-color); }
+  .team-card.t { --team-color: var(--t-color); }
+  .team-card.selected { border-color: var(--team-color); box-shadow: 0 0 24px color-mix(in srgb, var(--team-color) 30%, transparent); }
+  .team-card .icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--canvas); background: var(--team-color); }
+  .team-card h3 { margin: 0; font-size: 18px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .team-card p { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
+
+  #round-end { text-align: center; }
+  #round-end .winner { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+  #round-end .winner.ct { color: var(--ct-color); }
+  #round-end .winner.t { color: var(--t-color); }
+  #round-end .reason { color: var(--muted); margin-bottom: 24px; }
+  #round-end .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; text-align: center; }
+  #round-end .stat { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-panel); padding: 16px; }
+  #round-end .stat-value { font-family: var(--font-readout); font-size: 28px; font-weight: 600; color: var(--ink); }
+  #round-end .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+
+  #scoreboard { max-width: 600px; }
+  #scoreboard table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #scoreboard th, #scoreboard td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--hairline); }
+  #scoreboard th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #scoreboard tr:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #scoreboard .player { display: flex; align-items: center; gap: 8px; }
+  #scoreboard .player-tag { width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--canvas); }
+  #scoreboard .player-tag.ct { background: var(--ct-color); }
+  #scoreboard .player-tag.t { background: var(--t-color); }
+  #scoreboard .player-name { font-weight: 500; }
+  #scoreboard .you .player-name { color: var(--accent); }
+  #scoreboard .stat-col { text-align: right; font-family: var(--font-readout); color: var(--muted); }
+  #scoreboard .stat-col.kills { color: var(--ink); font-weight: 600; }
+
+  #game-over { text-align: center; }
+  #game-over .final { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
+  #game-over .final.victory { color: #3fb950; }
+  #game-over .final.defeat { color: var(--accent); }
+  #game-over .final-score { font-size: 48px; font-family: var(--font-readout); font-weight: 700; color: var(--ink); margin: 16px 0; }
+  #game-over .mvps { display: flex; justify-content: center; gap: 24px; margin-top: 24px; flex-wrap: wrap; }
+  #game-over .mvp { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-panel); padding: 16px 24px; min-width: 140px; }
+  #game-over .mvp.ct { border-color: var(--ct-color); }
+  #game-over .mvp.t { border-color: var(--t-color); }
+  #game-over .mvp-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  #game-over .mvp-name { font-weight: 600; color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    #hitmarker, #crosshair.gap i, #bomb-icon, .btn, .buy-item, .team-card, #round-timer.warning { transition-duration: 0.01ms; animation: none; }
+    #ammo.empty #ammo-mag { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="health"><div id="health-bar"><div id="health-fill"></div></div><span id="health-value">100</span></div>
+  <div id="ammo"><span id="ammo-mag">30</span><span id="ammo-reserve">/ 90</span></div>
+  <div id="money"><span id="money-icon">$</span><span id="money-value">800</span><span id="money-bonus">+300</span></div>
+  <div id="round-info">
+    <div id="round-timer">1:55</div>
+    <div id="round-phase">Buy Phase</div>
+    <div id="round-score"><span class="ct">0</span> - <span class="t">0</span></div>
+  </div>
+  <div id="bomb-status" hidden>
+    <div id="bomb-icon"></div>
+    <span id="bomb-timer">40.0</span>
+    <span id="bomb-state">Planted</span>
+  </div>
+  <div id="kill-feed"></div>
+  <div id="spectator" hidden>Spectating: <span id="spectator-name">Player</span></div>
+</div>
+
+<div id="overlay-team" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="team-title">
+    <h1 id="team-title">Select Team</h1>
+    <p>Choose your side. Teams swap at half-time (round 13).</p>
+    <div class="team-select">
+      <div class="team-card ct" data-team="ct"><div class="icon">🛡</div><h3>Counter-Terrorists</h3><p>Defuse the bomb or rescue hostages. Win by eliminating all Terrorists or defusing the bomb.</p></div>
+      <div class="team-card t" data-team="t"><div class="icon">⚔</div><h3>Terrorists</h3><p>Plant the bomb and defend it. Win by eliminating all CTs or detonating the bomb.</p></div>
+    </div>
+  </section>
+</div>
+
+<div id="overlay-buy" class="overlay" hidden>
+  <section class="panel" id="buy-menu" role="dialog" aria-modal="true" aria-labelledby="buy-title">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h1 id="buy-title" style="margin:0;">Buy Menu</h1>
+      <div style="display:flex;align-items:center;gap:16px;font-family:var(--font-readout);font-size:18px;color:var(--ink);"><span>$</span><span id="buy-money">800</span></div>
+    </div>
+    <div class="buy-category"><h2>Primary Weapons</h2><div class="buy-grid" id="buy-primary"></div></div>
+    <div class="buy-category"><h2>Secondary Weapons</h2><div class="buy-grid" id="buy-secondary"></div></div>
+    <div class="buy-category"><h2>Equipment</h2><div class="buy-grid" id="buy-equipment"></div></div>
+    <div class="buy-category"><h2>Grenades</h2><div class="buy-grid" id="buy-grenades"></div></div>
+    <div style="display:flex;gap:12px;margin-top:8px;"><button class="btn secondary" id="buy-auto">Auto-buy</button><button class="btn secondary" id="buy-close">Close (B)</button></div>
+  </section>
+</div>
+
+<div id="overlay-round-end" class="overlay" hidden>
+  <section class="panel" id="round-end" role="dialog" aria-modal="true" aria-labelledby="round-end-title">
+    <h1 id="round-end-title">Round Over</h1>
+    <div class="winner" id="round-winner">Counter-Terrorists Win</div>
+    <div class="reason" id="round-reason">Bomb defused</div>
+    <div class="stats">
+      <div class="stat"><div class="stat-value" id="stat-kills">0</div><div class="stat-label">Kills</div></div>
+      <div class="stat"><div class="stat-value" id="stat-damage">0</div><div class="stat-label">Damage</div></div>
+      <div class="stat"><div class="stat-value" id="stat-money">$800</div><div class="stat-label">Next Round</div></div>
+    </div>
+    <button class="btn" id="round-continue">Continue</button>
+  </section>
+</div>
+
+<div id="overlay-scoreboard" class="overlay" hidden>
+  <section class="panel" id="scoreboard" role="dialog" aria-modal="true" aria-labelledby="sb-title">
+    <h1 id="sb-title" style="margin-bottom:16px;">Scoreboard</h1>
+    <table><thead><tr><th>Player</th><th class="stat-col">K</th><th class="stat-col">D</th><th class="stat-col">A</th><th class="stat-col">Score</th></tr></thead><tbody id="sb-body"></tbody></table>
+    <button class="btn secondary" id="sb-close" style="margin-top:16px;">Close (Tab)</button>
+  </section>
+</div>
+
+<div id="overlay-game-over" class="overlay" hidden>
+  <section class="panel" id="game-over" role="dialog" aria-modal="true" aria-labelledby="go-title">
+    <h1 id="go-title">Match Complete</h1>
+    <div class="final" id="final-result">Victory</div>
+    <div class="final-score" id="final-score">13 - 7</div>
+    <div class="mvps">
+      <div class="mvp ct"><div class="mvp-title">CT MVP</div><div class="mvp-name" id="mvp-ct">Player</div></div>
+      <div class="mvp t"><div class="mvp-title">T MVP</div><div class="mvp-name" id="mvp-t">Player</div></div>
+    </div>
+    <button class="btn" id="go-restart" style="margin-top:24px;">Play Again</button>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
